@@ -16,14 +16,8 @@
 
 template <typename T>   using  UT =  std::unique_ptr<T>;    // определение типа храненеия 
 
-/**
- * @brief  Очередь для рабоы с очередью объектов представленными как 
- * 
- * @tparam T 
- */
 
-
-template <class T, uint_fast32_t sz_> class ThreadQuue {
+template <class T, uint_fast32_t sz_> class QUPoints {
     public:
     struct point_p {
         uint32_t    p_count{0};                //  защита от ABA
@@ -32,18 +26,18 @@ template <class T, uint_fast32_t sz_> class ThreadQuue {
     };
 
     std::atomic <point_p>   p_;             // указатели на начало и конец очереди
-    uint32_t t_count_;
+    const uint32_t atm_count_;                    // количестов попыток
 
     std::array<UT<T>, sz_>  vec_element_;
    
-    std::vector< std::atomic<int>> vec_fint_;  // 0 -- пусто
+    std::vector< std::atomic<int>> vec_fint_;   // 0 -- пусто
                                                 // 1 -- выполняется операция 
                                                 // 2 -- присутствуют данные
     
     public:
 
-   ThreadQuue(uint32_t tc = 8)
-    : t_count_(tc)
+   QUPoints(const uint32_t tc = 16)
+    : atm_count_(tc)
     , vec_element_(std::array<UT<T>, sz_>())
     , vec_fint_(std::vector<std::atomic<int>>(sz_))
     {
@@ -53,7 +47,7 @@ template <class T, uint_fast32_t sz_> class ThreadQuue {
         }
     }
 
-    ~ThreadQuue(){}
+    ~QUPoints(){}
 
 
     int idForAdd(){ // получить индекс для добавления элемента 
@@ -63,16 +57,16 @@ template <class T, uint_fast32_t sz_> class ThreadQuue {
         point_p p;  // предыдыщее значение
         point_p pn; // новое значение
         do {
-            if(count++ > t_count_ ){ return -1; }
+            if(count++ > atm_count_ ){ return -1; }
             pn = p = p_.load(std::memory_order_acquire);
             pn.p_beg++;
             pn.p_count++;
             if (pn.p_beg == sz_) pn.p_beg = 0;
+            std::atomic_thread_fence(std::memory_order_release);
             if (pn.p_beg == pn.p_end){ return -1;}
         } while (!p_.compare_exchange_weak(p,pn,std::memory_order_release));
 
         return p.p_beg;
-
     }
 
     int idForGet(){ // полчить индекс для чтения элемента 
@@ -82,9 +76,10 @@ template <class T, uint_fast32_t sz_> class ThreadQuue {
         point_p  pn;    // новое значение
         
         do {
-            if( count++ > t_count_ ){ return -1; }
-            pn = p = p_.load(std::memory_order_acquire); // !!!
+            if( count++ > atm_count_ ){ return -1; }
+            pn = p = p_.load(std::memory_order_acquire);
             if( p.p_beg == p.p_end ){  return -1; }
+            std::atomic_thread_fence(std::memory_order_acquire);
             pn.p_end++;
             pn.p_count++;
             if (pn.p_end == sz_) pn.p_end = 0;
@@ -96,14 +91,13 @@ template <class T, uint_fast32_t sz_> class ThreadQuue {
 
     UT<T> addEl(int id ,UT<T> elT ) {
         if(elT == nullptr || id < 0 || id >= sz_) {
-            if (elT == nullptr) std::cout << "!!! addEl elT == nullptr" << std::endl; 
             return std::move(elT);
         }
         int fl;
-        uint32_t count =0;
+        uint32_t count {0};
 
         do{
-            if (fl = 0;++count >= t_count_){
+            if (fl = 0;++count >= atm_count_){
                  return std::move(elT);
             }
         } while (!vec_fint_[id].compare_exchange_weak(fl,1,std::memory_order_acquire));
@@ -112,24 +106,24 @@ template <class T, uint_fast32_t sz_> class ThreadQuue {
         count = 0;
 
         do {
-            if (fl = 1;++count >= t_count_){
+            if (fl = 1;++count >= atm_count_){
                  return std::move(elT);
             }
         } while(!vec_fint_[id].compare_exchange_weak(fl, 2, std::memory_order_release));
         return nullptr;
     }
 
-    // nullptr - ошибка
+
     UT<T> getEl(int id){
         if (id < 0 || id >= sz_) {
              return nullptr;
         }
         int fl;
-        uint32_t count =0;
-        UT<T> ret = nullptr;
+        uint32_t count {0};
+        UT<T> ret {nullptr};
 
         do{
-            if (fl = 2;++count >= t_count_){
+            if (fl = 2;++count >= atm_count_){
                  return nullptr;
             }
         } while (!vec_fint_[id].compare_exchange_weak(fl,1,std::memory_order_acquire));
@@ -138,7 +132,7 @@ template <class T, uint_fast32_t sz_> class ThreadQuue {
         count = 0;
 
         do {
-            if (fl = 1;++count >= t_count_){
+            if (fl = 1;++count >= atm_count_){
                  return std::move(ret);
             }
         } while(!vec_fint_[id].compare_exchange_weak(fl, 0, std::memory_order_release));
@@ -156,7 +150,7 @@ template <class T, uint_fast32_t sz_> class ThreadQuue {
         if (id == -1) {
             return std::move(elT); 
         }
-        return  addEl(id,std::move(elT));    // return std::move( addEl(id,std::move(elT)));
+        return  addEl(id,std::move(elT)); 
     }
 
     UT<T> getElem(){
@@ -165,7 +159,7 @@ template <class T, uint_fast32_t sz_> class ThreadQuue {
         if (id == -1) {
             return nullptr;
         }
-        return getEl(id);       // return std::move (getEl(id))
+        return getEl(id);  
     }
 
     uint32_t lenQueue()const {return sz_;}
@@ -188,9 +182,4 @@ template <class T, uint_fast32_t sz_> class ThreadQuue {
     uint32_t getEnd() const {
         return (p_.load(std::memory_order_relaxed)).p_end;
     }
-
-    int isNotFree(int id){
-        return vec_fint_[id].load(std::memory_order_relaxed);
-    }
-
 };

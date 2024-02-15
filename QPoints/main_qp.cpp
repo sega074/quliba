@@ -72,7 +72,7 @@ int main(int argc, char** argv) {
     uint64_t * element_3 = new uint64_t;
     *element_3 = ELEMENT_3;
 
-
+/**/
     auto thread_send_qsm = [&](){    // обший для высех элементов отправки
         uint64_t ste = 1;
         uint32_t tp_el =0;  // тип элемента 0,1,2
@@ -120,11 +120,10 @@ int main(int argc, char** argv) {
             if (++tp_el > 2 ){ tp_el = 0;}
         }
     };
-
+/**/
     for (int i = 0 ; i < s_count; ++i){     // запуск потоков отправки
             thread_send.emplace_back(thread_send_qsm);
     }
-
 /**/
     auto thread_recv_qsm  = [&](){
         int st = 0;
@@ -168,12 +167,11 @@ int main(int argc, char** argv) {
         }
         
     };
-
-    for (int i = 0 ; i < r_count; ++i){     // запуск потоков отправки
+/**/
+    for (int i = 0 ; i < r_count; ++i){     // запуск потоков приема
             thread_recv.emplace_back(thread_recv_qsm);
     }
-
-//-----------------------------------------------------------------------------
+/**/
 
     for (int i = 0 ; i < s_count ; ++i){    // ожидение звершения потоков отправки
         thread_send[i].join();
@@ -185,13 +183,14 @@ int main(int argc, char** argv) {
         thread_recv[i].join();
     }
 
-    if ( count1  != ucount1 || count2 != ucount2 || count3 != ucount3 ){
+    std::cout << std::dec << std::endl << std::endl;
+    std::cout << std::endl;
+    std::cout << "send count1 " << count1      << " receive ucont1 " << ucount1 << std::endl;
+    std::cout << "send count2 " << count2      << " receive ucont2 " << ucount2 << std::endl;
+    std::cout << "send count3 " << count3      << " receive ucont3 " << ucount3 << std::endl;
 
-        std::cout << std::dec << std::endl << std::endl;
+    if ( count1  != ucount1 || count2 != ucount2 || count3 != ucount3 ){
         std::cout << "beg    " << qsm.getBeg() << " end    " << qsm.getEnd() << std::endl; 
-        std::cout << "count1 " << count1      << " ucont1 " << ucount1 << std::endl;
-        std::cout << "count2 " << count2      << " ucont2 " << ucount2 << std::endl;
-        std::cout << "count3 " << count3      << " ucont3 " << ucount3 << std::endl;
 
         for (int i = 0 ; i < qsm.lenQueue(); ++i){
             uint64_t *el = qsm.getEl(i);

@@ -6,7 +6,7 @@
 #include <iostream>
 #include <chrono>
 #include <string>
-#include <mutex>    // для организации вывода
+#include <mutex>    
 #include "QUPoints.h"
 
 #define ELEMENT_1 111111111
@@ -18,7 +18,7 @@ std::mutex lock_m;  //  Для операций В/В
 
 int main(int argc, char** argv) {
 
-    const int try_atm_q = 10000;
+    const uint32_t try_atm_q = 10000;
     
    
    // volatile bool bl_end = false;
@@ -38,6 +38,12 @@ int main(int argc, char** argv) {
     uint32_t s_count;   // количистов потоков для отправки
     uint32_t r_count;   // количестов потоков для приема
 
+    if (argc <= 1){
+        std::cout << std::string(argv[0]) << " entries_in_one_of_the_3_inetrations streams_of_writers streams_of_readers";
+        std::cout << std::endl;
+        return 1;
+    }
+
     if (argc >=2){
         c_count = std::stoul(std::string(argv[1]));
     } else if (argc == 1 || c_count == 0) {
@@ -56,41 +62,36 @@ int main(int argc, char** argv) {
         r_count = 3;
     }
 
-    ThreadQuue <uint64_t,64> qp(try_atm_q); 
+    QUPoints <uint64_t,64> qp(try_atm_q); 
 
-    ThreadQuue <uint64_t,32> qp_i1(try_atm_q);
+    QUPoints <uint64_t,32> qp_i1(try_atm_q);
 
-    ThreadQuue <uint64_t,32> qp_i2(try_atm_q);
+    QUPoints <uint64_t,32> qp_i2(try_atm_q);
 
-    ThreadQuue <uint64_t,32> qp_i3(try_atm_q);
+    QUPoints <uint64_t,32> qp_i3(try_atm_q);
 
 
     for (int i = 0; i < 25; ++i){
-        //std::unique_ptr<uint64_t> wr_el;
-        //UT<uint64_t> wr_el;
         UT<uint64_t>  el;
 
 
-       // wr_el    = std::make_unique<uint64_t>(ELEMENT_1);
         el = qp_i1.addElem(std::make_unique<uint64_t>(ELEMENT_1));
         if(el != nullptr){
             std::cout << "err1" << std::endl;
         }
 
-        //wr_el = std::make_unique<uint64_t>(ELEMENT_2);
         el = qp_i2.addElem(std::make_unique<uint64_t>(ELEMENT_2));
         if(el != nullptr){
             std::cout << "err2" << std::endl;
         }
 
-        //wr_el = std::make_unique<uint64_t>(ELEMENT_3);
         el = qp_i3.addElem(std::make_unique<uint64_t>(ELEMENT_3));
         if(el != nullptr){
             std::cout << "err3" << std::endl;
         }
     }
     //
-    UT< uint64_t> ret; // !!! +++++
+    UT< uint64_t> ret; 
     int coutn_id = 0; 
     int id;   
     do {
@@ -99,8 +100,7 @@ int main(int argc, char** argv) {
     } while (id == -1 && coutn_id < try_atm_q);
     int try_recv = 0;
     do {
-        //ret  = std::move( qp_i.getEl(id)); //!!!
-        ret  = qp_i1.getEl(id); //!!!
+        ret  = qp_i1.getEl(id);
         try_recv++;
         if (ret == nullptr)std::this_thread::sleep_for(std::chrono::microseconds(1) );
     } while ((ret == nullptr) && (try_recv < try_atm_q));
@@ -110,8 +110,8 @@ int main(int argc, char** argv) {
 
     //----------------------------------------------------------------- send
 
-        std::function <void(const int, const uint64_t,const uint64_t,const int , std::atomic<uint64_t>&, ThreadQuue <uint64_t,32>&, ThreadQuue <uint64_t,64>&)> 
-            thread_send_x = [&](const int nid, const uint64_t elem,const uint64_t c_count, int try_atm_q, std::atomic<uint64_t>& count, ThreadQuue <uint64_t,32>& qp_i, ThreadQuue <uint64_t,64>& qp){
+        std::function <void(const int, const uint64_t,const uint64_t,const int , std::atomic<uint64_t>&, QUPoints <uint64_t,32>&, QUPoints <uint64_t,64>&)> 
+            thread_send_x = [&](const int nid, const uint64_t elem,const uint64_t c_count, int try_atm_q, std::atomic<uint64_t>& count, QUPoints<uint64_t,32>& qp_i, QUPoints <uint64_t,64>& qp){
        
     while (bl_end == 2);
 
@@ -127,7 +127,7 @@ int main(int argc, char** argv) {
             if  (id != -1 ) {  // 1    получит индекс для чтения образца
                 int try_recv = 0;
                 do {
-                    ret  = qp_i.getEl(id); //!!!
+                    ret  = qp_i.getEl(id);
                     try_recv++;
                     if (ret == nullptr)std::this_thread::sleep_for(std::chrono::microseconds(1) );
                 } while ((ret == nullptr) && (try_recv < try_atm_q));
@@ -189,15 +189,11 @@ int main(int argc, char** argv) {
                     std::cout << "(send) err recive from input queue null elem for next writing" << std::endl;
                 }
             } else {
-
                     if (qp_i.elInQueue() == 0){
                         std::this_thread::sleep_for(std::chrono::microseconds(100) );
                     }
             }
-
-
         }
-
         return;
     };
 
@@ -296,7 +292,6 @@ int main(int argc, char** argv) {
                         try_send = 0;
                         do {
                             ret = std::move (qp_i3.addEl(id3_o,std::move(ret)));
-                            //ret = qp_i3.addEl(id3_o,std::move(ret));
                             try_send++;
                         } while ((ret != nullptr) && (try_send < try_atm_q));   // должен записывать чтобы не потерять
                         if (ret != nullptr){
@@ -354,9 +349,9 @@ int main(int argc, char** argv) {
    
 
     std::cout << std::dec << std::endl << std::endl;
-    std::cout << "передано count1 " << count1      << " плдучено cont1 " << ucount1 << std::endl;
-    std::cout << "передано count2 " << count2      << " получено cont2 " << ucount2 << std::endl;
-    std::cout << "передано count3 " << count3      << " полученоcont3 " << ucount3 << std::endl;
+    std::cout << "send count1 " << count1      << " receive cont1 " << ucount1 << std::endl;
+    std::cout << "send count2 " << count2      << " receive cont2 " << ucount2 << std::endl;
+    std::cout << "send count3 " << count3      << " receive cont3 " << ucount3 << std::endl;
 
     if ( (count1  != ucount1) || (count2 != ucount2) || (count3 != ucount3) ){
         std::cout  << "first " << qp.p_.load().p_beg;

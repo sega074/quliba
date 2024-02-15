@@ -25,7 +25,7 @@ template <class T, uint32_t sz_> class  QPoints {   // очередь с сис�
 
     std::atomic <point_p>   p_;             // указатели на начало и конец очереди
     std::array<std::atomic<T*>,sz_> vec_element_;// вектор для хранения элементов очереди
-    uint32_t atm_count_;                      // кол попыток внести изменения в атомарные переменные
+    const uint32_t atm_count_;                      // кол попыток внести изменения в атомарные переменные
 
     public:
 
@@ -51,6 +51,7 @@ template <class T, uint32_t sz_> class  QPoints {   // очередь с сис�
             pn.p_beg++;
             pn.p_coutn++;
             if (pn.p_beg == sz_) pn.p_beg = 0;
+            std::atomic_thread_fence(std::memory_order_release);
             if (pn.p_beg == pn.p_end){ return -1;}
         } while (!p_.compare_exchange_weak(p,pn,std::memory_order_release));
 
@@ -67,6 +68,7 @@ template <class T, uint32_t sz_> class  QPoints {   // очередь с сис�
             if( count++ > atm_count_ ){ return -1; }
             pn = p = p_.load(std::memory_order_acquire);
             if( pn.p_beg == pn.p_end ){  return -1; }
+            std::atomic_thread_fence(std::memory_order_acquire);
             pn.p_end++;
             pn.p_coutn++;
             if (pn.p_end == sz_) pn.p_end = 0;
