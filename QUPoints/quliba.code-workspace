@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"name": "quliba",
+			"path": ".."
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"ostream": "cpp",
+			"thread": "cpp"
+		}
+	}
+}

@@ -2,6 +2,7 @@
 #include <memory>
 #include <atomic>
 #include <thread>
+#include <future>
 #include <numeric>
 #include <iostream>
 #include <chrono>
@@ -110,90 +111,38 @@ int main(int argc, char** argv) {
 
     //----------------------------------------------------------------- send
 
-        std::function <void(const int, const uint64_t,const uint64_t,const int , std::atomic<uint64_t>&, QUPoints <uint64_t,32>&, QUPoints <uint64_t,64>&)> 
+    std::function <void(const int, const uint64_t,const uint64_t,const int , std::atomic<uint64_t>&, QUPoints <uint64_t,32>&, QUPoints <uint64_t,64>&)> 
             thread_send_x = [&](const int nid, const uint64_t elem,const uint64_t c_count, int try_atm_q, std::atomic<uint64_t>& count, QUPoints<uint64_t,32>& qp_i, QUPoints <uint64_t,64>& qp){
        
     while (bl_end == 2);
 
-        while (count < c_count){
-            UT< uint64_t> ret; // !!! +++++
-            int coutn_id = 0; 
-            int id;   
-            do {
-                id = qp_i.idForGet();
-                coutn_id++;
-            } while (id == -1 && coutn_id < try_atm_q);
-            
-            if  (id != -1 ) {  // 1    получит индекс для чтения образца
-                int try_recv = 0;
-                do {
-                    ret  = qp_i.getEl(id);
-                    try_recv++;
-                    if (ret == nullptr)std::this_thread::sleep_for(std::chrono::microseconds(1) );
-                } while ((ret == nullptr) && (try_recv < try_atm_q));
-
-                if (ret != nullptr){
-                    if (*ret == elem) {
-                        int id;
-                        int coutn_id = 0;
-                        do {
-                            id = qp.idForAdd();
-                            coutn_id++;
-                        } while (id == -1 && coutn_id < try_atm_q);  // получить индекс для записи
-
-                        if (id == -1){  // вернуть образец обратно в очередь так как индекс для запис не получен
-                            std::this_thread::sleep_for(std::chrono::microseconds(1) );
-                            int id_o;
-                            coutn_id = 0;
-                            do {
-                                id_o = qp_i.idForAdd();
-                                coutn_id++;
-                            } while((id_o == -1) && (coutn_id < try_atm_q) ); 
-
-                            if (id_o != -1){
-                                int try_send = 0;
-                                do {
-                                    ret = qp_i.addEl(id_o,std::move(ret));
-                                    try_send ++;
-                                } while ((ret != nullptr) && (try_send < try_atm_q));
-
-                                if (ret != nullptr){
-                                    std::lock_guard<std::mutex> lk{lock_m};
-                                    std::cout << "err(send) return elem "<< elem << " to " << nid << std::endl;
-                                }
-                            } else {
-                                std::lock_guard<std::mutex> lk{lock_m};
-                                std::cout << "err(send) get id for return " << elem <<  " to " << nid << std::endl;
-                            }
-                        } else {    // записать элемент
-                            int try_send = 0;
-                            do {
-                                ret = qp.addEl(id,std::move(ret));
-                                try_send++; 
-                                if (ret!= nullptr) std::this_thread::sleep_for(std::chrono::microseconds(1) );       
-                            } while ((ret != nullptr) && (try_send < try_atm_q));
-
-                            if (ret == nullptr){
-                                count++;
-                            } else {
-                                std::lock_guard<std::mutex> lk{lock_m};
-                                std::cout << "err(send) wriete el " << elem << " to qp id "<< id << std::endl;
-                            }
-                        }
-                    } else {    
-                        std::lock_guard<std::mutex> lk{lock_m};
-                        std::cout << "(send) err jther elem " << elem << " from " << nid  << " ret "<< (ret != nullptr ? *ret: 0) << std::endl;
-                    }
-                } else {
-                    std::lock_guard<std::mutex> lk{lock_m};
-                    std::cout << "(send) err recive from input queue null elem for next writing" << std::endl;
+    while (count < c_count ){
+          
+            UT< uint64_t> ret;
+            while ((ret = qp_i.getElem()) == nullptr ) {
+                if (ret == nullptr && qp_i.elInQueue() <= 2){
+                    qp_i.addElem(std::make_unique<uint64_t>(elem));
                 }
-            } else {
-                    if (qp_i.elInQueue() == 0){
-                        std::this_thread::sleep_for(std::chrono::microseconds(100) );
-                    }
+                std::this_thread::sleep_for(std::chrono::microseconds(1));
             }
-        }
+
+            if (*ret == elem) {
+                int id_add = qp.idForAdd();
+                if (id_add == -1){  // вернуть образец обратно в очередь так как индекс для запис не получен
+                    qp_i.addElem(std::move(ret));
+                } else {    // записать элемент
+                    UT< uint64_t> ret_add = std::move( qp.addEl(id_add,std::move(ret)));
+                    if (ret_add == nullptr){
+                        count++;
+                    } 
+                }
+            } else {    
+                std::lock_guard<std::mutex> lk{lock_m};
+                std::cout << "(send) err jther elem " << elem << " from " << nid  << " ret "<< (ret != nullptr ? *ret: 0) << std::endl;
+            }
+
+    }
+        std::cout << "end send " << elem  << " " << std::endl;
         return;
     };
 
@@ -203,122 +152,46 @@ int main(int argc, char** argv) {
 
     auto thread_recv_q = [&](){
        
-        uint64_t st=0;
-        uint64_t coutn_recv = 0;
-        uint64_t count_atm = 0;
 
         while(bl_end == 2);
 
-        while ( bl_end > 0 || (qp.elInQueue() > 0)  || (coutn_recv < try_atm_q)){    
+        int atm = 100000;
+        UT< uint64_t> ret ;
+
+        while ( /* bl_end > 0 || */ (qp.elInQueue() > 0 || atm > 0) ){    
             int id = qp.idForGet();
             if (id == -1){
+                //if (qp.elInQueue() == 0) {--atm;}
+                --atm;
                 std::this_thread::sleep_for(std::chrono::microseconds(1));
-                if(bl_end == 0 && qp.elInQueue() ==0) coutn_recv++;
-                count_atm++;
-                if (count_atm > 10000){
-                    count_atm = 0;
-                }
                 continue;
             }
-            count_atm = 0;  // сброс счетчика попыток
-
-            int try_recv = 0;
-            UT< uint64_t> ret;
            
-            do {
-                    ret  = std::move(qp.getEl(id));
-                    try_recv++;
-            } while((ret == nullptr) && (try_recv < try_atm_q) );
+           
+            
+            while ((ret = std::move (qp.getEl(id))) == nullptr  );
 
-            if (ret != nullptr){
+            
+                atm = 1000000;
                 
                 if (*ret == ELEMENT_1) {
                     ucount1++;
-                    // ++
-                    int try_send = 0;
-                    int id1_o;
-                    do{
-                        id1_o = qp_i1.idForAdd();
-                        try_send++;
-                    } while( (id1_o == -1) && (try_send < try_atm_q));
-                    if (id1_o != -1){
-                        try_send = 0;
-                        do {
-                            ret = std::move(qp_i1.addEl(id1_o,std::move(ret)));
-                            try_send++;
-                        } while ((ret != nullptr) && (try_send < try_atm_q));   // должен записывать чтобы не потерять
-                        if (ret != nullptr){
-                            std::lock_guard<std::mutex> lk{lock_m};
-                            std::cout << "err(recv) no (return) add ELEMENT_1 to qp_i1 ret.fird " << *ret  << std::endl;
-                        }
-                    } else {
-                        std::lock_guard<std::mutex> lk{lock_m};
-                        std::cout << "err(recv) get id1_o  ELEMENT_1" << std::endl;
-                    }
-
+                    qp_i1.addElem(std::move(ret));
                 } else if (*ret == ELEMENT_2) {
                     ucount2++;
-                    // ++
-                    int try_send = 0;
-                    int id2_o;
-                    do{
-                        id2_o = qp_i2.idForAdd();
-                        try_send++;
-                    } while( (id2_o == -1) && (try_send < try_atm_q));
-                    if (id2_o != -1){
-                        try_send = 0;
-                        do {
-                            ret = std::move(qp_i2.addEl(id2_o,std::move(ret)));
-                            try_send++;
-                        } while ((ret != nullptr) && (try_send < try_atm_q));   // должен записывать чтобы не потерять
-                        if (ret != nullptr){
-                            std::lock_guard<std::mutex> lk{lock_m};
-                            std::cout << "err(recv) no (return) add ELEMENT_2 to qp_i2 ret.fird " << *ret  << std::endl;
-                        }
-                    } else {
-                        std::lock_guard<std::mutex> lk{lock_m};
-                         std::cout << "err(recv) get id2_o  ELEMENT_2" << std::endl;
-                    }
+                    qp_i2.addElem(std::move(ret));
                 } else if (*ret == ELEMENT_3) {
                     ucount3++;
-                    // ++
-                    int try_send = 0;
-                    int id3_o;
-                    do{
-                        id3_o = qp_i3.idForAdd();
-                        try_send++;
-                    } while((id3_o == -1) && (try_send < try_atm_q));
-                    if(id3_o != -1){
-                        try_send = 0;
-                        do {
-                            ret = std::move (qp_i3.addEl(id3_o,std::move(ret)));
-                            try_send++;
-                        } while ((ret != nullptr) && (try_send < try_atm_q));   // должен записывать чтобы не потерять
-                        if (ret != nullptr){
-                            std::lock_guard<std::mutex> lk{lock_m};
-                            std::cout << "err(recv) no (return) add ELEMENT_3 to qp_i3 ret.fird " << *ret  << std::endl;
-                        }
-                    } else {
-                        std::lock_guard<std::mutex> lk{lock_m};
-                        std::cout << "err(recv) get id3_o  ELEMENT_3" << std::endl;
-                    }
-                } else if (ret == nullptr){
-                    std::lock_guard<std::mutex> lk{lock_m};
-                    std::cout << "err(recv) receive ret.fistn == nullptr and  true elem for id: " << id << std::endl;
+                    qp_i3.addElem(std::move(ret));
                 } else {
                     std::lock_guard<std::mutex> lk{lock_m};
                     std::cout << "err(recv) get elem: " << *ret << std::endl; // !!!
                 }
-            } else {
-                std::lock_guard<std::mutex> lk{lock_m};
-                std::cout << "err(recv) get elem qp for id: " << id ;
-                std::cout <<  " qp.falag "<< qp.vec_fint_[id];
-                std::cout << " qp.elem " << (qp.vec_element_[id]== nullptr ? 0: *(qp.vec_element_[id]) ) << std::endl;
-            }
         }
 
     };
 
+    
     for (int i = 0 ; i < r_count; ++i){     // запуск потоков приема
             thread_recv.emplace_back(thread_recv_q);
     }
@@ -334,15 +207,18 @@ int main(int argc, char** argv) {
         }
     }
     
-    bl_end = 1;
+    bl_end--; // Элемент одновременного запкска
 
     for (int i = 0 ; i < s_count ; ++i){    // ожидение звершения потоков отправки
         thread_send[i].join();
     }
 
-    bl_end= 0;   // установить признак завершения
+    
+    //bl_end= 0;   // установить признак завершения
 
-    for (int i = 0 ; i < r_count; ++i){
+   
+
+    for (int i = 0 ; i < r_count ; ++i){
         thread_recv[i].join();
     }
 

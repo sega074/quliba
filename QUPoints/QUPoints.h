@@ -4,15 +4,7 @@
 #include <array>
 #include <memory>
 #include <atomic>
-#include <thread>
-#include <future>
 #include <numeric>
-#include <iostream>
-#include <chrono>
-#include <string>
-#include <mutex>
-// ------------------------  ThreadQuue ------------------------------------------
-//#define  tre_count static_cast<int>(8)
 
 template <typename T>   using  UT =  std::unique_ptr<T>;    // определение типа храненеия 
 
@@ -61,8 +53,7 @@ template <class T, uint_fast32_t sz_> class QUPoints {
             pn = p = p_.load(std::memory_order_acquire);
             pn.p_beg++;
             pn.p_count++;
-            if (pn.p_beg == sz_) pn.p_beg = 0;
-            std::atomic_thread_fence(std::memory_order_release);
+            if (pn.p_beg == sz_) {pn.p_beg = 0;}
             if (pn.p_beg == pn.p_end){ return -1;}
         } while (!p_.compare_exchange_weak(p,pn,std::memory_order_release));
 
@@ -79,7 +70,6 @@ template <class T, uint_fast32_t sz_> class QUPoints {
             if( count++ > atm_count_ ){ return -1; }
             pn = p = p_.load(std::memory_order_acquire);
             if( p.p_beg == p.p_end ){  return -1; }
-            std::atomic_thread_fence(std::memory_order_acquire);
             pn.p_end++;
             pn.p_count++;
             if (pn.p_end == sz_) pn.p_end = 0;
@@ -97,18 +87,17 @@ template <class T, uint_fast32_t sz_> class QUPoints {
         uint32_t count {0};
 
         do{
-            if (fl = 0;++count >= atm_count_){
+            fl = 0;
+            if ( ++count >= atm_count_){
                  return std::move(elT);
             }
-        } while (!vec_fint_[id].compare_exchange_weak(fl,1,std::memory_order_acquire));
+        } while (!vec_fint_[id].compare_exchange_weak(fl,1,std::memory_order_release));
 
         vec_element_[id]= std::move(elT);
         count = 0;
 
         do {
-            if (fl = 1;++count >= atm_count_){
-                 return std::move(elT);
-            }
+            fl = 1;
         } while(!vec_fint_[id].compare_exchange_weak(fl, 2, std::memory_order_release));
         return nullptr;
     }
@@ -123,18 +112,17 @@ template <class T, uint_fast32_t sz_> class QUPoints {
         UT<T> ret {nullptr};
 
         do{
-            if (fl = 2;++count >= atm_count_){
+            fl = 2;
+            if ( ++count >= atm_count_){
                  return nullptr;
             }
-        } while (!vec_fint_[id].compare_exchange_weak(fl,1,std::memory_order_acquire));
+        } while (!vec_fint_[id].compare_exchange_weak(fl,1,std::memory_order_release));
 
         ret = std::move(vec_element_[id]);
         count = 0;
 
         do {
-            if (fl = 1;++count >= atm_count_){
-                 return std::move(ret);
-            }
+            fl = 1;
         } while(!vec_fint_[id].compare_exchange_weak(fl, 0, std::memory_order_release));
 
         return std::move (ret);
@@ -175,11 +163,15 @@ template <class T, uint_fast32_t sz_> class QUPoints {
         }
     }
 
-    uint32_t getBeg() const {
-        return (p_.load(std::memory_order_relaxed)).p_beg;
-    }
+/**
+ * @brief Прочитать указателина начала и конца данных расположенных в очереди
+ * 
+ * @return std::tuple <uint16_t, uint16_t>  пара значений индекса начала и индекса конца
+ */
+    std::tuple <uint16_t, uint16_t> getBegEnd() const noexcept {
 
-    uint32_t getEnd() const {
-        return (p_.load(std::memory_order_relaxed)).p_end;
+        point_p p = p_.load(std::memory_order_relaxed);
+
+        return std::make_tuple(p.p_beg,p.p_end);
     }
 };
