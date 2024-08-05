@@ -5,4 +5,5 @@ set (CMAKE_CXX_STANDARD 17)
 
 add_subdirectory (QPoints)
 add_subdirectory (QUPoints)
+add_subdirectory (QUMPoints)
 
