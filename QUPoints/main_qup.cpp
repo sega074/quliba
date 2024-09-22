@@ -7,7 +7,8 @@
 #include <iostream>
 #include <chrono>
 #include <string>
-#include <mutex>    
+#include <mutex>
+#include <stdlib.h>    
 #include "QUPoints.h"
 
 #define ELEMENT_1 111111111
@@ -18,6 +19,11 @@ std::mutex lock_m;  //  Для операций В/В
         
 
 int main(int argc, char** argv) {
+
+    errno = 0;
+    int l = strtol(nullptr,nullptr,0);
+
+    int lr = errno;
 
     const uint32_t try_atm_q = 10000;
     
