@@ -1,8 +1,12 @@
 # quliba
-# Варианты конструирования и использования "велосипеда" или его запчастей
+# Шаблон циклической очереи фиксированного размера ( размер до 2**16 -1 )
+# Fixed-size cyclic eyepiece template (size up to 2**16 -1 )
 
-## QPoints Вариант очереди фиксированого размера  типа T*
+## QUPoints <class T, uint_fast32_t sz_> 
+## T -- тип объекта очереди 
+## sz -- размер очереди
 
-## QUPoints Вариант очереди фиксированного размера типа std::unique_ptr<T>
+## QUPoints <class T, uint_fast32_t sz_> 
+## T -- type of queue object 
+## sz -- queue size
 
-### Ветка test_s содержит тесты для классов QPoints QUPoints 5

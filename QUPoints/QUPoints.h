@@ -12,13 +12,13 @@ template <typename T>   using  UT =  std::unique_ptr<T>;    // определе�
 template <class T, uint_fast32_t sz_> class QUPoints {
     public:
     struct point_p {
-        uint32_t    p_count{0};                //  защита от ABA
+        uint32_t    p_count{0};                // защита от ABA
         uint16_t    p_beg{0};                  // указатель на индекс с которого пишем
         uint16_t    p_end{0};                  // указатель на индекс с которого читаем
     };
 
-    std::atomic <point_p>   p_;             // указатели на начало и конец очереди
-    const uint32_t atm_count_;                    // количестов попыток
+    std::atomic <point_p>   p_;                 // указатели на начало и конец очереди
+    const uint32_t atm_count_;                  // количестов попыток
 
     std::array<UT<T>, sz_>  vec_element_;
    
