@@ -1,49 +1,32 @@
 #include <vector>
-#include <memory>
 #include <atomic>
 #include <thread>
-#include <future>
-#include <numeric>
 #include <iostream>
 #include <chrono>
-#include <string>
-#include <mutex>
-#include <stdlib.h>    
+#include <algorithm>    
 #include "QUPoints.h"
+#include "QUPoints_Functs_test.h"
 
-#define ELEMENT_1 111111111
-#define ELEMENT_2 222222222
-#define ELEMENT_3 333333333
 
-std::mutex lock_m;  //  Для операций В/В
-        
+//#define SIZE_QUEUE_A    64  // Размер очереди а
+const uint_fast32_t SIZE_QUEUE_A {64};
+// #define SIZE_QUEUE_B    48  // размер очереди b
+const uint_fast32_t SIZE_QUEUE_B {48};      
 
 int main(int argc, char** argv) {
 
-    errno = 0;
-    int l = strtol(nullptr,nullptr,0);
-
-    int lr = errno;
-
-    const uint32_t try_atm_q = 10000;
-    
-   
-   // volatile bool bl_end = false;
-
-    std::atomic <int> bl_end {2};
-
-    std::atomic<uint64_t> count1{0};
-    std::atomic<uint64_t> count2{0};
-    std::atomic<uint64_t> count3{0};
-
-    std::atomic<uint64_t> ucount1{0};
-    std::atomic<uint64_t> ucount2{0};
-    std::atomic<uint64_t> ucount3{0};
+ 
+    std::atomic<uint64_t> count_a{0};   // количtство выполенных операций из a
+    std::atomic<uint64_t> count_b{0};   // количество выполенных операций из b
+    std::atomic<int>      run_fase{0};
 
 
-    uint64_t c_count;
+    uint64_t c_count;   // количестов операций чтения и запис 
     uint32_t s_count;   // количистов потоков для отправки
     uint32_t r_count;   // количестов потоков для приема
+    uint32_t n_elem;    // количиство элементов которые записываются в очереди
+                        // диапзон от 1 до общая размерность очередей -1
+
 
     if (argc <= 1){
         std::cout << std::string(argv[0]) << " entries_in_one_of_the_3_inetrations streams_of_writers streams_of_readers";
@@ -51,203 +34,130 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    if (argc >=2){
+    if (argc >=2){  // количестов операций чтение и записи очереди
         c_count = std::stoul(std::string(argv[1]));
     } else if (argc == 1 || c_count == 0) {
         c_count = 100000l;
     }
 
-    if (argc >=3){
+    if (argc >=3){  // количестов потоков для читающих из очереди a
         s_count = std::stoul(std::string(argv[2]));
     } else if ( s_count == 0) {
         s_count = 3;
     }
 
-    if (argc >=4){
+    if (argc >=4){  // количичтво потоков читающих из очереди b
         r_count = std::stoul(std::string(argv[3]));
     } else if ( r_count == 0) {
         r_count = 3;
     }
 
-    QUPoints <uint64_t,64> qp(try_atm_q); 
+    if(argc >= 5){      // количество элементов первоначально записанных в очередь
+        n_elem = std::stoul(std::string (argv[4]));
+    } else if (n_elem == 0){
+        n_elem = SIZE_QUEUE_A -1;
+    }
 
-    QUPoints <uint64_t,32> qp_i1(try_atm_q);
+    QUPoints <uint64_t, SIZE_QUEUE_A> qp_a;
+    QUPoints <uint64_t, SIZE_QUEUE_B> qp_b;
 
-    QUPoints <uint64_t,32> qp_i2(try_atm_q);
+    std::vector <std::thread> thread_a;  // вектор потоков читает из a
+    std::vector <std::thread> thread_b;  // вектор потоков читает из b
 
-    QUPoints <uint64_t,32> qp_i3(try_atm_q);
 
 
-    for (int i = 0; i < 25; ++i){
+
+    // первоначальное заполнение очередей
+    std::cout << std::endl;
+    for (int i = 0; i < n_elem; ++i){
         UT<uint64_t>  el;
 
-
-        el = qp_i1.addElem(std::make_unique<uint64_t>(ELEMENT_1));
-        if(el != nullptr){
-            std::cout << "err1" << std::endl;
-        }
-
-        el = qp_i2.addElem(std::make_unique<uint64_t>(ELEMENT_2));
-        if(el != nullptr){
-            std::cout << "err2" << std::endl;
-        }
-
-        el = qp_i3.addElem(std::make_unique<uint64_t>(ELEMENT_3));
-        if(el != nullptr){
-            std::cout << "err3" << std::endl;
+        if(qp_a.elInQueue() < i){
+            if (qp_a.addElem(std::make_unique<uint64_t>(i)) == nullptr){
+                std::cout <<  i << " ";
+            }
+        } else if (qp_b.elInQueue() < i - qp_a.elInQueue()){
+            if (qp_b.addElem(std::make_unique<uint64_t>(i)) == nullptr) {
+                std::cout <<  i << " ";
+            }
         }
     }
-    //
-    UT< uint64_t> ret; 
-    int coutn_id = 0; 
-    int id;   
-    do {
-        id = qp_i1.idForGet();
-        coutn_id++;
-    } while (id == -1 && coutn_id < try_atm_q);
-    int try_recv = 0;
-    do {
-        ret  = qp_i1.getEl(id);
-        try_recv++;
-        if (ret == nullptr)std::this_thread::sleep_for(std::chrono::microseconds(1) );
-    } while ((ret == nullptr) && (try_recv < try_atm_q));
+    std::cout << std::endl;
 
-    std::vector <std::thread> thread_send;  // вектор потоков для отправки 
-    std::vector <std::thread> thread_recv;  // вектор потоков для приема
-
-    //----------------------------------------------------------------- send
-
-    std::function <void(const int, const uint64_t,const uint64_t,const int , std::atomic<uint64_t>&, QUPoints <uint64_t,32>&, QUPoints <uint64_t,64>&)> 
-            thread_send_x = [&](const int nid, const uint64_t elem,const uint64_t c_count, int try_atm_q, std::atomic<uint64_t>& count, QUPoints<uint64_t,32>& qp_i, QUPoints <uint64_t,64>& qp){
-       
-    while (bl_end == 2);
-
-    while (count < c_count ){
-          
-            UT< uint64_t> ret;
-            while ((ret = qp_i.getElem()) == nullptr ) {
-                if (ret == nullptr && qp_i.elInQueue() <= 2){
-                    qp_i.addElem(std::make_unique<uint64_t>(elem));
-                }
-                std::this_thread::sleep_for(std::chrono::microseconds(1));
-            }
-
-            if (*ret == elem) {
-                int id_add = qp.idForAdd();
-                if (id_add == -1){  // вернуть образец обратно в очередь так как индекс для запис не получен
-                    qp_i.addElem(std::move(ret));
-                } else {    // записать элемент
-                    UT< uint64_t> ret_add = std::move( qp.addEl(id_add,std::move(ret)));
-                    if (ret_add == nullptr){
-                        count++;
-                    } 
-                }
-            } else {    
-                std::lock_guard<std::mutex> lk{lock_m};
-                std::cout << "(send) err jther elem " << elem << " from " << nid  << " ret "<< (ret != nullptr ? *ret: 0) << std::endl;
-            }
-
-    }
-        std::cout << "end send " << elem  << " " << std::endl;
-        return;
-    };
-
-
-    // ----------------------------------------------------- Q rcv
-
-
-    auto thread_recv_q = [&](){
-       
-
-        while(bl_end == 2);
-
-        int atm = 100000;
-        UT< uint64_t> ret ;
-
-        while ( /* bl_end > 0 || */ (qp.elInQueue() > 0 || atm > 0) ){    
-            int id = qp.idForGet();
-            if (id == -1){
-                //if (qp.elInQueue() == 0) {--atm;}
-                --atm;
-                std::this_thread::sleep_for(std::chrono::microseconds(1));
-                continue;
-            }
-           
-           
-            
-            while ((ret = std::move (qp.getEl(id))) == nullptr  );
-
-            
-                atm = 1000000;
-                
-                if (*ret == ELEMENT_1) {
-                    ucount1++;
-                    qp_i1.addElem(std::move(ret));
-                } else if (*ret == ELEMENT_2) {
-                    ucount2++;
-                    qp_i2.addElem(std::move(ret));
-                } else if (*ret == ELEMENT_3) {
-                    ucount3++;
-                    qp_i3.addElem(std::move(ret));
-                } else {
-                    std::lock_guard<std::mutex> lk{lock_m};
-                    std::cout << "err(recv) get elem: " << *ret << std::endl; // !!!
-                }
-        }
-
-    };
+    std::cout << std::endl << "Pervision elem qp_a:" << qp_a.elInQueue() << std::endl;
+    std::cout << "Pervision elem qp_b:" << qp_b.elInQueue() << std::endl << std::endl;
 
     
     for (int i = 0 ; i < r_count; ++i){     // запуск потоков приема
-            thread_recv.emplace_back(thread_recv_q);
+        thread_a.emplace_back(thread_qp_x < uint64_t,
+                                            SIZE_QUEUE_A,
+                                            SIZE_QUEUE_B >
+                                            (c_count, count_a, run_fase, qp_a, qp_b));
     }
 
     for (int i = 0 ; i < s_count; ++i){     // запуск потоков отправки
-        int j = i%3;
-        if (j == 0){
-            thread_send.emplace_back (thread_send_x, i,ELEMENT_1, c_count, try_atm_q, std::ref(count1), std::ref(qp_i1), std::ref(qp) );
-        } else if (j == 1){
-            thread_send.emplace_back (thread_send_x, i,ELEMENT_2, c_count, try_atm_q, std::ref(count2), std::ref(qp_i2), std::ref(qp) );
-        } else {
-            thread_send.emplace_back (thread_send_x, i,ELEMENT_3, c_count, try_atm_q, std::ref(count3), std::ref(qp_i3), std::ref(qp) );
+        thread_b.emplace_back(thread_qp_x < uint64_t,
+                                            SIZE_QUEUE_B,
+                                            SIZE_QUEUE_A >
+                                            (c_count, count_b, run_fase, qp_b, qp_a));
+    }
+    
+    run_fase++; // Элемент одновременного запкска
+
+    // дождаться завершения
+    while (run_fase > 0 && count_a < c_count && count_b < c_count){
+        std::this_thread::sleep_for(std::chrono::microseconds(1000000));
+    }
+
+    run_fase = 0;
+
+    for (int i = 0 ; i < r_count ; ++i){    // ожидение звершения потоков отправки
+        thread_a[i].join();
+    }
+
+    for (int i = 0 ; i < s_count ; ++i){
+        thread_b[i].join();
+    }
+
+    std::cout <<  std::endl <<"elments in to qp_a:" << qp_a.elInQueue() << std::endl;
+    std::cout << "elments in to qp_b:" << qp_b.elInQueue() << std::endl << std::endl;
+    
+    const uint_fast32_t el =qp_a.elInQueue()+ qp_b.elInQueue();
+    
+    std::vector <uint64_t> rez (el);
+    for (int i = 0 ; i < el; ++i){
+        UT <uint64_t> u;
+        if (qp_a.elInQueue() > 0 ){
+            u = qp_a.getElem();
+            if (u != nullptr) {
+                rez[i] = *u; 
+            }
+            continue;
+        }
+        if(qp_b.elInQueue() > 0){
+            u = qp_b.getElem();
+            if (u != nullptr) {
+                rez[i] = *u;
+            }  
+            continue;
         }
     }
     
-    bl_end--; // Элемент одновременного запкска
+    std::sort(std::begin(rez), std::end(rez));
 
-    for (int i = 0 ; i < s_count ; ++i){    // ожидение звершения потоков отправки
-        thread_send[i].join();
+    std::cout << "count_a:" << count_a << std::endl;
+    std::cout << "count_b:" << count_b << std::endl;
+    std::cout << std::endl;
+
+  
+    for (int i = 0 ; i < el ; ++i){
+       
+        std::cout << rez[i] << " ";
+       
     }
 
+    std::cout << std::endl;
     
-    //bl_end= 0;   // установить признак завершения
-
-   
-
-    for (int i = 0 ; i < r_count ; ++i){
-        thread_recv[i].join();
-    }
-
-   
-
-    std::cout << std::dec << std::endl << std::endl;
-    std::cout << "send count1 " << count1      << " receive cont1 " << ucount1 << std::endl;
-    std::cout << "send count2 " << count2      << " receive cont2 " << ucount2 << std::endl;
-    std::cout << "send count3 " << count3      << " receive cont3 " << ucount3 << std::endl;
-
-    if ( (count1  != ucount1) || (count2 != ucount2) || (count3 != ucount3) ){
-        std::cout  << "first " << qp.p_.load().p_beg;
-        std::cout << " end " << qp.p_.load().p_end;
-        std::cout << " elem " << qp.elInQueue() << std::endl;
-
-        for (int i = 0; i < qp.vec_element_.size(); ++i){
-            std::cout  << i << " " ;
-            std::cout << (((qp.vec_element_[i]!= nullptr) && qp.vec_fint_[i]) ? *qp.vec_element_[i]:0);
-            std::cout << " " << qp.vec_fint_[i] << std::endl;
-        }
-        return 1;
-    }
-    
-   return 0;
+    return 0;
 
 }
